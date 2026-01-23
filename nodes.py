@@ -225,7 +225,13 @@ def load_qwen_model(model_type: str, model_choice: str, device: str, precision: 
             "Please check the ComfyUI console for the detailed 'Critical Import Error' above."
         )
 
-    model = Qwen3TTSModel.from_pretrained(final_source, device_map=device, dtype=dtype, attn_implementation="flash_attention_2")
+    # Try to use flash_attention_2 if available, otherwise fall back to default
+    try:
+        model = Qwen3TTSModel.from_pretrained(final_source, device_map=device, dtype=dtype, attn_implementation="flash_attention_2")
+    except (ImportError, ValueError) as e:
+        # flash_attention_2 not available or not supported, use default attention
+        print(f"⚠️ [Qwen3-TTS] flash_attention_2 not available, using default attention: {e}")
+        model = Qwen3TTSModel.from_pretrained(final_source, device_map=device, dtype=dtype)
     
     _MODEL_CACHE[cache_key] = model
     return model

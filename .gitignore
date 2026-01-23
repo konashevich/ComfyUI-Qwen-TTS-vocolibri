@@ -7,8 +7,8 @@ __pycache__/
 .idea/
 .DS_Store
 
-# ComfyUI and models
-models/
+# ComfyUI downloaded model weights (top-level only)
+/models/
 *.bin
 *.pt
 *.pth
