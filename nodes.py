@@ -101,6 +101,57 @@ except ImportError:
 _MODEL_CACHE = {}
 
 
+def apply_qwen3_patches(model):
+    """Apply stability and compatibility patches to the model instance"""
+    if model is None:
+        return
+    
+    # 1. Monkeypatch model._normalize_audio_inputs to return mutable lists to avoid upstream tuple assignment bug
+    # and to support (waveform, sr) tuple format from ComfyUI
+    orig_normalize = getattr(model, "_normalize_audio_inputs", None)
+    
+    def _safe_normalize(self, audios):
+        # Adapted from upstream but returns list entries as lists [waveform, sr]
+        # and correctly handles the (waveform, sr) tuple format
+        if isinstance(audios, list):
+            items = audios
+        elif isinstance(audios, tuple) and len(audios) == 2 and isinstance(audios[0], np.ndarray):
+            # This is a single audio in tuple format (waveform, sr)
+            items = [audios]
+        else:
+            items = [audios]
+
+        out = []
+        for a in items:
+            if a is None:
+                continue
+            if isinstance(a, str):
+                wav, sr = self._load_audio_to_np(a)
+                out.append([wav.astype(np.float32), int(sr)])
+            elif isinstance(a, tuple) and len(a) == 2 and isinstance(a[0], np.ndarray):
+                out.append([a[0].astype(np.float32), int(a[1])])
+            elif isinstance(a, list) and len(a) == 2 and isinstance(a[0], np.ndarray):
+                out.append([a[0].astype(np.float32), int(a[1])])
+            elif isinstance(a, np.ndarray):
+                raise ValueError("For numpy waveform input, pass a tuple (audio, sr).")
+            else:
+                # If we still can't identify it, it might be the cause of our NoneType or other issues
+                print(f"⚠️ [Qwen3-TTS] Unknown audio input type: {type(a)}")
+                continue
+
+        # ensure mono
+        for i in range(len(out)):
+            wav, sr = out[i][0], out[i][1]
+            if wav.ndim > 1:
+                out[i][0] = np.mean(wav, axis=-1).astype(np.float32)
+        return out
+
+    try:
+        model._normalize_audio_inputs = types.MethodType(_safe_normalize, model)
+    except Exception as e:
+        print(f"⚠️ [Qwen3-TTS] Failed to apply audio normalization patch: {e}")
+
+
 def check_and_download_models():
     """Check for local models and trigger batch download if missing"""
     global _MODELS_CHECKED
@@ -242,10 +293,13 @@ def load_qwen_model(model_type: str, model_choice: str, device: str, precision: 
     # Try to use flash_attention_2 if available, otherwise fall back to default
     try:
         model = Qwen3TTSModel.from_pretrained(final_source, device_map=device, dtype=dtype, attn_implementation="flash_attention_2")
-    except (ImportError, ValueError) as e:
+    except (ImportError, ValueError, Exception) as e:
         # flash_attention_2 not available or not supported, use default attention
         print(f"⚠️ [Qwen3-TTS] flash_attention_2 not available, using default attention: {e}")
         model = Qwen3TTSModel.from_pretrained(final_source, device_map=device, dtype=dtype)
+    
+    # Apply patches
+    apply_qwen3_patches(model)
     
     _MODEL_CACHE[cache_key] = model
     return model
@@ -320,8 +374,6 @@ class VoiceCloneNode:
     def INPUT_TYPES(cls) -> Dict[str, Any]:
         return {
             "required": {
-                "ref_audio": ("AUDIO", {"tooltip": "Reference audio (ComfyUI Audio)"}),
-                "ref_text": ("STRING", {"multiline": True, "default": "", "placeholder": "Reference audio text (optional)"}),
                 "target_text": ("STRING", {"multiline": True, "default": "Good one. Okay, fine, I'm just gonna leave this sock monkey here. Goodbye."}),
                 "model_choice": (["0.6B", "1.7B"], {"default": "0.6B"}),
                 "device": (["auto", "cuda","mps", "cpu"], {"default": "auto"}),
@@ -329,6 +381,9 @@ class VoiceCloneNode:
                 "language": (DEMO_LANGUAGES, {"default": "Auto"}),
             },
             "optional": {
+                "ref_audio": ("AUDIO", {"tooltip": "Reference audio (ComfyUI Audio)"}),
+                "ref_text": ("STRING", {"multiline": True, "default": "", "placeholder": "Reference audio text (optional)"}),
+                "voice_clone_prompt": ("VOICE_CLONE_PROMPT", {"tooltip": "Reusable voice clone prompt from VoiceClonePromptNode"}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
                 "x_vector_only": ("BOOLEAN", {"default": False}),
                 "max_new_tokens": ("INT", {"default": 2048, "min": 512, "max": 4096, "step": 256}),
@@ -423,9 +478,12 @@ class VoiceCloneNode:
         # Return as tuple (waveform, sr) with 1-D numpy waveform as expected by the tokenizer
         return (waveform, int(sr))
 
-    def generate(self, ref_audio: Dict[str, Any], ref_text: str, target_text: str, model_choice: str, device: str, precision: str, language: str, seed: int = 0, x_vector_only: bool = False, max_new_tokens: int = 2048) -> Tuple[Dict[str, Any]]:
-        if ref_audio is None:
-            raise RuntimeError("Reference audio is required")
+    def generate(self, target_text: str, model_choice: str, device: str, precision: str, language: str, 
+                 ref_audio: Optional[Dict[str, Any]] = None, ref_text: str = "", 
+                 voice_clone_prompt: Optional[Any] = None, seed: int = 0, 
+                 x_vector_only: bool = False, max_new_tokens: int = 2048) -> Tuple[Dict[str, Any]]:
+        if ref_audio is None and voice_clone_prompt is None:
+            raise RuntimeError("Either reference audio or voice clone prompt is required")
         
         # Load model
         model = load_qwen_model("Base", model_choice, device, precision)
@@ -438,62 +496,36 @@ class VoiceCloneNode:
         np.random.seed(seed % (2**32))
         
         audio_tuple = None
-        if isinstance(ref_audio, dict):
-            audio_tuple = self._audio_tensor_to_tuple(ref_audio)
-        else:
-            raise RuntimeError("Unsupported reference audio format")
-
-        # Monkeypatch model._normalize_audio_inputs to return mutable lists to avoid upstream tuple assignment bug
-        orig_normalize = getattr(model, "_normalize_audio_inputs", None)
-        def _safe_normalize(self, audios):
-            # Adapted from upstream but returns list entries as lists [waveform, sr]
-            if isinstance(audios, list):
-                items = audios
+        if ref_audio is not None:
+            if isinstance(ref_audio, dict):
+                audio_tuple = self._audio_tensor_to_tuple(ref_audio)
             else:
-                items = [audios]
-
-            out = []
-            for a in items:
-                if isinstance(a, str):
-                    wav, sr = self._load_audio_to_np(a)
-                    out.append([wav.astype(np.float32), int(sr)])
-                elif isinstance(a, tuple) and len(a) == 2 and isinstance(a[0], np.ndarray):
-                    out.append([a[0].astype(np.float32), int(a[1])])
-                elif isinstance(a, np.ndarray):
-                    raise ValueError("For numpy waveform input, pass a tuple (audio, sr).")
-                else:
-                    raise TypeError(f"Unsupported audio input type: {type(a)}")
-
-            # ensure mono
-            for i in range(len(out)):
-                wav, sr = out[i][0], out[i][1]
-                if wav.ndim > 1:
-                    out[i][0] = np.mean(wav, axis=-1).astype(np.float32)
-            return out
-
-        if orig_normalize is not None:
-            try:
-                model._normalize_audio_inputs = types.MethodType(_safe_normalize, model)
-            except Exception:
-                pass
+                raise RuntimeError("Unsupported reference audio format")
 
         try:
             mapped_lang = LANGUAGE_MAP.get(language, "auto")
+            
+            # Check if voice_clone_prompt is provided
+            voice_clone_prompt_param = None
+            ref_audio_param = None
+            if voice_clone_prompt is not None:
+                voice_clone_prompt_param = voice_clone_prompt
+            elif ref_audio is not None:
+                ref_audio_param = audio_tuple
+            else:
+                raise RuntimeError("Either 'ref_audio' or 'voice_clone_prompt' must be provided")
+
             wavs, sr = model.generate_voice_clone(
                 text=target_text,
                 language=mapped_lang,
-                ref_audio=audio_tuple,
+                ref_audio=ref_audio_param,
                 ref_text=ref_text if ref_text and ref_text.strip() else None,
+                voice_clone_prompt=voice_clone_prompt_param,
                 x_vector_only_mode=x_vector_only,
                 max_new_tokens=max_new_tokens,
             )
-        finally:
-            # restore original
-            if orig_normalize is not None:
-                try:
-                    model._normalize_audio_inputs = orig_normalize
-                except Exception:
-                    pass
+        except Exception as e:
+            raise RuntimeError(f"Generation failed: {e}")
 
         if isinstance(wavs, list) and len(wavs) > 0:
             waveform = torch.from_numpy(wavs[0]).float()
@@ -569,3 +601,225 @@ class CustomVoiceNode:
             audio_data = {"waveform": waveform, "sample_rate": sr}
             return (audio_data,)
         raise RuntimeError("Invalid audio data generated")
+
+
+class VoiceClonePromptNode:
+    """
+    VoiceClonePrompt Node: Extract voice features from reference audio for reuse.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls) -> Dict[str, Any]:
+        return {
+            "required": {
+                "ref_audio": ("AUDIO", {"tooltip": "Reference audio (ComfyUI Audio)"}),
+                "ref_text": ("STRING", {"multiline": True, "default": "", "placeholder": "Reference audio text (highly recommended for better quality)"}),
+                "model_choice": (["0.6B", "1.7B"], {"default": "0.6B"}),
+                "device": (["auto", "cuda", "mps", "cpu"], {"default": "auto"}),
+                "precision": (["bf16", "fp32"], {"default": "bf16"}),
+            },
+            "optional": {
+                "x_vector_only": ("BOOLEAN", {"default": False, "tooltip": "If True, only speaker embedding is extracted (ref_text not needed)"}),
+            }
+        }
+
+    RETURN_TYPES = ("VOICE_CLONE_PROMPT",)
+    RETURN_NAMES = ("voice_clone_prompt",)
+    FUNCTION = "create_prompt"
+    CATEGORY = "Qwen3-TTS"
+    DESCRIPTION = "VoiceClonePrompt: Extract and cache voice features for reuse in VoiceClone node."
+
+    def create_prompt(self, ref_audio: Dict[str, Any], ref_text: str, model_choice: str, device: str, precision: str, x_vector_only: bool = False) -> Tuple[Any]:
+        if ref_audio is None:
+            raise RuntimeError("Reference audio is required")
+        
+        # Load model (usually Base model)
+        model = load_qwen_model("Base", model_choice, device, precision)
+
+        # Reuse VoiceCloneNode's audio parsing logic
+        vcn = VoiceCloneNode()
+        audio_tuple = vcn._audio_tensor_to_tuple(ref_audio)
+
+        # Extract prompt
+        prompt_items = model.create_voice_clone_prompt(
+            ref_audio=audio_tuple,
+            ref_text=ref_text if ref_text and ref_text.strip() else None,
+            x_vector_only_mode=x_vector_only,
+        )
+
+        return (prompt_items,)
+
+
+class RoleBankNode:
+    """
+    RoleBank Node: Manage a collection of voice prompts mapped to names.
+    Supports up to 8 roles per node.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls) -> Dict[str, Any]:
+        inputs = {
+            "required": {},
+            "optional": {}
+        }
+        for i in range(1, 9):
+            inputs["optional"][f"role_name_{i}"] = ("STRING", {"default": f"Role{i}"})
+            inputs["optional"][f"prompt_{i}"] = ("VOICE_CLONE_PROMPT",)
+        return inputs
+
+    RETURN_TYPES = ("QWEN3_ROLE_BANK",)
+    RETURN_NAMES = ("role_bank",)
+    FUNCTION = "create_bank"
+    CATEGORY = "Qwen3-TTS"
+    DESCRIPTION = "RoleBank: Collect multiple voice prompts into a named registry for dialogue generation."
+
+    def create_bank(self, **kwargs) -> Tuple[Dict[str, Any]]:
+        bank = {}
+        for i in range(1, 9):
+            name = kwargs.get(f"role_name_{i}", "").strip()
+            prompt = kwargs.get(f"prompt_{i}")
+            if name and prompt is not None:
+                bank[name] = prompt
+        return (bank,)
+
+
+class DialogueInferenceNode:
+    """
+    DialogueInference Node: Generate multi-role continuous dialogue from a script.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls) -> Dict[str, Any]:
+        return {
+            "required": {
+                "script": ("STRING", {"multiline": True, "default": "Role1: Hello, how are you?\nRole2: I am fine, thank you.", "placeholder": "Format: RoleName: Text"}),
+                "role_bank": ("QWEN3_ROLE_BANK",),
+                "model_choice": (["0.6B", "1.7B"], {"default": "1.7B"}),
+                "device": (["auto", "cuda", "mps", "cpu"], {"default": "auto"}),
+                "precision": (["bf16", "fp32"], {"default": "bf16"}),
+                "language": (DEMO_LANGUAGES, {"default": "Auto"}),
+                "pause_seconds": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 5.0, "step": 0.1, "tooltip": "Silence duration between sentences"}),
+                "merge_outputs": ("BOOLEAN", {"default": True, "tooltip": "Merge all dialogue segments into a single long audio"}),
+            },
+            "optional": {
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
+                "max_new_tokens_per_line": ("INT", {"default": 2048, "min": 512, "max": 4096, "step": 256}),
+            }
+        }
+
+    RETURN_TYPES = ("AUDIO",)
+    RETURN_NAMES = ("audio",)
+    FUNCTION = "generate_dialogue"
+    CATEGORY = "Qwen3-TTS"
+    DESCRIPTION = "DialogueInference: Execute a script with multiple roles and generate continuous speech."
+
+    def generate_dialogue(self, script: str, role_bank: Dict[str, Any], model_choice: str, device: str, precision: str, language: str, pause_seconds: float, merge_outputs: bool, seed: int = 0, max_new_tokens_per_line: int = 2048) -> Tuple[Dict[str, Any]]:
+        if not script or not role_bank:
+            raise RuntimeError("Script and Role Bank are required")
+
+        # Load model
+        model = load_qwen_model("Base", model_choice, device, precision)
+
+        # Set random seeds
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+        import numpy as np
+        np.random.seed(seed % (2**32))
+
+        lines = script.strip().split("\n")
+        
+        texts_to_gen = []
+        prompts_to_gen = [] # This must be a flat list of VoiceClonePromptItem
+        langs_to_gen = []
+        
+        mapped_lang = LANGUAGE_MAP.get(language, "auto")
+
+        print(f"🎬 [Qwen3-TTS] Preparing batched inference for {len(lines)} lines...")
+
+        for idx, line in enumerate(lines):
+            line = line.strip()
+            if not line or ":" not in line and "：" not in line:
+                continue
+            
+            # Simple parser
+            if "：" in line:
+                role_name, text = line.split("：", 1)
+            else:
+                role_name, text = line.split(":", 1)
+            
+            role_name = role_name.strip()
+            text = text.strip()
+            
+            if role_name not in role_bank:
+                print(f"⚠️ [Qwen3-TTS] Role '{role_name}' not found in Role Bank, skipping line: {line[:20]}...")
+                continue
+
+            texts_to_gen.append(text)
+            langs_to_gen.append(mapped_lang)
+            
+            # role_bank[role_name] is a List[VoiceClonePromptItem] (from create_voice_clone_prompt)
+            # We need to extract the items and keep them in a flat list for the model's batch call
+            role_prompts = role_bank[role_name]
+            if isinstance(role_prompts, list):
+                # Use the first one (most common case as users design one voice per role)
+                prompts_to_gen.append(role_prompts[0])
+            else:
+                prompts_to_gen.append(role_prompts)
+
+        if not texts_to_gen:
+            raise RuntimeError("No valid dialogue lines found matching Role Bank.")
+
+        try:
+            print(f"🎙️ [Qwen3-TTS] Running batched inference for {len(texts_to_gen)} lines...")
+            # Batch inference: text can be a list, voice_clone_prompt can be a list of items
+            wavs_list, sr = model.generate_voice_clone(
+                text=texts_to_gen,
+                language=langs_to_gen,
+                voice_clone_prompt=prompts_to_gen,
+                max_new_tokens=max_new_tokens_per_line,
+            )
+            
+            results = []
+            for wav in wavs_list:
+                waveform = torch.from_numpy(wav).float()
+                # Enforce mono [1, 1, samples]
+                if waveform.ndim == 1:
+                    waveform = waveform.unsqueeze(0).unsqueeze(0)
+                elif waveform.ndim == 2:
+                    waveform = waveform.unsqueeze(0)
+                    if waveform.shape[1] > 1:
+                        waveform = torch.mean(waveform, dim=1, keepdim=True)
+                
+                results.append(waveform)
+
+                # Add inter-sentence pause
+                if pause_seconds > 0:
+                    silence_len = int(pause_seconds * sr)
+                    silence = torch.zeros((1, 1, silence_len))
+                    results.append(silence)
+        except Exception as e:
+            raise RuntimeError(f"Dialogue generation failed during batched inference: {e}")
+
+        if not results:
+            raise RuntimeError("No dialogue lines were successfully generated.")
+
+        if merge_outputs:
+            # Concatenate along the sample dimension (last one)
+            merged_waveform = torch.cat(results, dim=-1)
+            audio_data = {"waveform": merged_waveform, "sample_rate": sr}
+            return (audio_data,)
+        else:
+            # Pad to longest for batch format
+            max_len = max(w.shape[-1] for w in results)
+            padded_results = []
+            for w in results:
+                curr_len = w.shape[-1]
+                if curr_len < max_len:
+                    padding = torch.zeros((w.shape[0], w.shape[1], max_len - curr_len))
+                    w = torch.cat([w, padding], dim=-1)
+                padded_results.append(w)
+            
+            batched_waveform = torch.cat(padded_results, dim=0)
+            audio_data = {"waveform": batched_waveform, "sample_rate": sr}
+            return (audio_data,)

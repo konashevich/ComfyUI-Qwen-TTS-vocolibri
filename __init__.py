@@ -15,20 +15,29 @@ from .nodes import (
     VoiceDesignNode,
     VoiceCloneNode,
     CustomVoiceNode,
+    VoiceClonePromptNode,
+    RoleBankNode,
+    DialogueInferenceNode,
 )
 
-# 建议通过添加前缀来确保唯一性
+# Node mappings
 NODE_CLASS_MAPPINGS = {
     "FB_Qwen3TTSVoiceClone": VoiceCloneNode,
     "FB_Qwen3TTSVoiceDesign": VoiceDesignNode,
     "FB_Qwen3TTSCustomVoice": CustomVoiceNode,
+    "FB_Qwen3TTSVoiceClonePrompt": VoiceClonePromptNode,
+    "FB_Qwen3TTSRoleBank": RoleBankNode,
+    "FB_Qwen3TTSDialogueInference": DialogueInferenceNode,
 }
 
-# 对应的显示名称映射也需要同步更新 Key
+# Node display name mappings
 NODE_DISPLAY_NAME_MAPPINGS = {
     "FB_Qwen3TTSVoiceClone": "🎭 Qwen3-TTS VoiceClone",
     "FB_Qwen3TTSVoiceDesign": "🎨 Qwen3-TTS VoiceDesign",
     "FB_Qwen3TTSCustomVoice": "🎵 Qwen3-TTS CustomVoice",
+    "FB_Qwen3TTSVoiceClonePrompt": "🎭 Qwen3-TTS VoiceClonePrompt",
+    "FB_Qwen3TTSRoleBank": "📇 Qwen3-TTS RoleBank",
+    "FB_Qwen3TTSDialogueInference": "💬 Qwen3-TTS DialogueInference",
 }
 
 # Version information
