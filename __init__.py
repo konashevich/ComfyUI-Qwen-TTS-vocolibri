@@ -47,6 +47,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 }
 
 # Version information
-__version__ = "1.0.1"
+__version__ = "1.0.5"
 
 print(f"✅ ComfyUI-Qwen-TTS v{__version__} loaded")
