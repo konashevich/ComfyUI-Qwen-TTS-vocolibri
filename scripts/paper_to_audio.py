@@ -8,6 +8,7 @@ import soundfile as sf
 import logging
 import gc
 from tqdm import tqdm
+from typing import Optional
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -119,14 +120,14 @@ def main():
     parser.add_argument(
         "--attn_impl",
         default=None,
-        choices=[None, "sdpa", "eager", "flash_attention_2"],
-        help="Attention implementation override (e.g., sdpa).",
+        choices=["auto", "sdpa", "eager", "flash_attention_2"],
+        help="Attention implementation override. Use 'auto' (or omit) to prefer flash-attn2 when available, else sdpa.",
     )
     parser.add_argument(
         "--dtype",
         default=None,
-        choices=["float16", "float32", "bfloat16"],
-        help="Override model dtype.",
+        choices=["auto", "float16", "float32", "bfloat16"],
+        help="Override model dtype. Use 'auto' (or omit) to pick bf16 when supported on CUDA, else fp16.",
     )
     parser.add_argument(
         "--disable_flash_sdp",
@@ -160,6 +161,77 @@ def main():
     parser.add_argument("--max_chunks", type=int, default=None, help="Limit number of chunks processed (from start_chunk)")
     
     args = parser.parse_args()
+
+    def _cuda_info() -> str:
+        if not torch.cuda.is_available():
+            return "CUDA not available"
+        try:
+            name = torch.cuda.get_device_name(0)
+        except Exception:
+            name = "unknown"
+        try:
+            cap = torch.cuda.get_device_capability(0)
+            cap_s = f"sm{cap[0]}{cap[1]}"
+        except Exception:
+            cap_s = "unknown"
+        return f"{name} ({cap_s})"
+
+    def _flash_attn2_available() -> bool:
+        if args.no_flash_attn:
+            return False
+        if args.device != "cuda" or not torch.cuda.is_available():
+            return False
+        try:
+            major, _minor = torch.cuda.get_device_capability(0)
+            if major < 8:
+                return False
+        except Exception:
+            return False
+        try:
+            import flash_attn  # noqa: F401
+        except Exception:
+            return False
+        return True
+
+    def _resolve_dtype() -> torch.dtype:
+        requested = args.dtype
+        if requested is None or requested == "auto":
+            if args.device == "cuda" and torch.cuda.is_available():
+                try:
+                    return torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+                except Exception:
+                    return torch.float16
+            return torch.float32
+
+        if requested == "float16":
+            return torch.float16
+        if requested == "bfloat16":
+            if args.device == "cuda" and torch.cuda.is_available():
+                try:
+                    if torch.cuda.is_bf16_supported():
+                        return torch.bfloat16
+                except Exception:
+                    pass
+                logger.warning("Requested bfloat16, but bf16 is not supported on this CUDA device. Falling back to float16.")
+                return torch.float16
+            logger.warning("Requested bfloat16 on non-CUDA device. Falling back to float32.")
+            return torch.float32
+        if requested == "float32":
+            return torch.float32
+
+        logger.warning(f"Unknown dtype '{requested}', falling back to auto")
+        args.dtype = "auto"
+        return _resolve_dtype()
+
+    def _resolve_attn_impl() -> Optional[str]:
+        requested = args.attn_impl
+        if requested is None or requested == "auto":
+            return "flash_attention_2" if _flash_attn2_available() else "sdpa"
+
+        if requested == "flash_attention_2" and not _flash_attn2_available():
+            logger.warning("Requested flash_attention_2, but flash-attn2 is unavailable. Falling back to sdpa.")
+            return "sdpa"
+        return requested
 
     if args.device == "cuda":
         if args.disable_flash_sdp:
@@ -207,6 +279,8 @@ def main():
 
     logger.info(f"Using model: {model_path}")
     logger.info(f"Device: {args.device}")
+    if args.device == "cuda":
+        logger.info(f"CUDA device: {_cuda_info()}")
 
     # Load Text
     if not os.path.exists(args.input_file):
@@ -236,21 +310,18 @@ def main():
     # Load Model
     logger.info("Loading Qwen-TTS model...")
     try:
-        if args.dtype == "float16":
-            dtype = torch.float16
-        elif args.dtype == "bfloat16":
-            dtype = torch.bfloat16
-        elif args.dtype == "float32":
-            dtype = torch.float32
-        else:
-            dtype = torch.float16 if args.device == "cuda" else torch.float32
+        dtype = _resolve_dtype()
+        attn_impl = _resolve_attn_impl()
+        logger.info(f"Resolved dtype: {str(dtype).replace('torch.', '')}")
+        if attn_impl:
+            logger.info(f"Resolved attn_impl: {attn_impl}")
 
         model_kwargs = {
             "device_map": args.device,
             "torch_dtype": dtype,
         }
-        if args.attn_impl:
-            model_kwargs["attn_implementation"] = args.attn_impl
+        if attn_impl:
+            model_kwargs["attn_implementation"] = attn_impl
         model = Qwen3TTSModel.from_pretrained(model_path, **model_kwargs)
     except Exception as e:
         logger.error(f"Failed to load model: {e}")
