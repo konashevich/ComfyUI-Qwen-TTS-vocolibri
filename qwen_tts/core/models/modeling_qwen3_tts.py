@@ -499,6 +499,15 @@ class Qwen3TTSTalkerRotaryEmbedding(nn.Module):
         self.original_max_seq_len = config.max_position_embeddings
 
         self.config = config
+        if self.rope_type not in ROPE_INIT_FUNCTIONS:
+            if getattr(config, "rope_parameters", None) is None:
+                config.rope_parameters = {}
+            if isinstance(config.rope_parameters, dict):
+                if config.rope_parameters.get("rope_type") in (None, "default"):
+                    config.rope_parameters["rope_type"] = "linear"
+                config.rope_parameters.setdefault("factor", 1.0)
+                config.rope_parameters.setdefault("rope_theta", getattr(config, "rope_theta", 10000.0))
+            self.rope_type = "linear"
         self.rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
 
         inv_freq, self.attention_scaling = self.rope_init_fn(self.config, device)
@@ -534,6 +543,15 @@ class Qwen3TTSRotaryEmbedding(nn.Module):
         self.original_max_seq_len = config.max_position_embeddings
 
         self.config = config
+        if self.rope_type not in ROPE_INIT_FUNCTIONS:
+            if getattr(config, "rope_parameters", None) is None:
+                config.rope_parameters = {}
+            if isinstance(config.rope_parameters, dict):
+                if config.rope_parameters.get("rope_type") in (None, "default"):
+                    config.rope_parameters["rope_type"] = "linear"
+                config.rope_parameters.setdefault("factor", 1.0)
+                config.rope_parameters.setdefault("rope_theta", getattr(config, "rope_theta", 10000.0))
+            self.rope_type = "linear"
         self.rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
 
         inv_freq, self.attention_scaling = self.rope_init_fn(self.config, device)

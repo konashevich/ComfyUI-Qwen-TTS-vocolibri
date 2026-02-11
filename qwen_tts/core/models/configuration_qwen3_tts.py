@@ -449,6 +449,9 @@ class Qwen3TTSTalkerConfig(PretrainedConfig):
         self.codec_bos_id = codec_bos_id
         self.spk_id = spk_id
         self.spk_is_dialect = spk_is_dialect
+        # Ensure pad_token_id exists for downstream model init
+        if not hasattr(self, "pad_token_id") or self.pad_token_id is None:
+            self.pad_token_id = codec_pad_id
 
 
 class Qwen3TTSConfig(PretrainedConfig):
