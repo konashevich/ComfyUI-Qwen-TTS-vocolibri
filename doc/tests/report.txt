@@ -1,0 +1,34 @@
+Task Summary
+Source Located: Found the comprehensive markdown file at Debunking_Blockchain_Global_v2.md.
+Statistics: 133,038 characters (~18,215 words) split into 229 chunks.
+Neutral Configuration: Applied the research-backed sampling parameters for the 0.6B model to ensure a stable, academic reading style:
+Temperature: 0.4
+Top_P: 0.7
+Repetition Penalty: 1.1
+Sampling: Enabled (--do_sample true)
+Performance Optimization:
+Batch Size: 4 (Standardized for your hardware to balance speed and VRAM).
+Acceleration: Using bfloat16 precision and sdpa attention implementation.
+Generation Status:
+Process: Running in the background (Terminal ID 8588c344).
+Output Folder: Debunking_Blockchain_Neutral_Full
+Estimated Time: Approximately 2.5 to 3 hours.
+
+a) When you set --batch_size 4, the "size" of each batch is measured in two ways: by the number of chunks and by the total character count.
+
+1) The Chunk Count (Fixed at 4)
+The script attempts to group 4 semantic chunks into a single GPU forward pass.
+
+Each chunk is created by split_text, which tries to keep segments under 800 characters (usually splitting at paragraph or sentence boundaries).
+
+2) The Character Volume (Variable)
+Because chunks are split semantically (to avoid robotic mid-sentence cuts), they aren't all the same length.
+
+Average Batch Size: Typically between 2,400 and 3,200 characters.
+Maximum Safety Limit: The script has a max_batch_chars safety limit of 6,000 characters.
+
+How clamp_batch_size works:
+Before sending a batch to the GPU, the paper_to_audio.py clamp_batch_size function checks the total length of the next 4 chunks.
+
+If Sum < 6,000: It processes all 4 chunks at once.
+If Sum > 6,000: It automatically reduces the batch size (e.g., to 3 or 2) for that specific step to prevent your GPU from running out of memory (OOM).
