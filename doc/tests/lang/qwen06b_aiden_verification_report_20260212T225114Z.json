@@ -1,0 +1,62 @@
+[
+  {
+    "attempt": 1,
+    "config": {
+      "name": "baseline_auto",
+      "language": "Auto",
+      "do_sample": true,
+      "top_p": 0.7,
+      "temperature": 0.4,
+      "repetition_penalty": 1.1,
+      "max_new_tokens": 1024
+    },
+    "file": "/home/beast/vocolibri-production/ai_models/qwen-tts/doc/tests/lang/qwen06b_aiden_baseline_auto_20260212T225114Z.wav",
+    "transcript": "",
+    "passed": false
+  },
+  {
+    "attempt": 2,
+    "config": {
+      "name": "english_constrained_sampling",
+      "language": "English",
+      "do_sample": true,
+      "top_p": 0.3,
+      "temperature": 0.2,
+      "repetition_penalty": 1.15,
+      "max_new_tokens": 120
+    },
+    "file": "/home/beast/vocolibri-production/ai_models/qwen-tts/doc/tests/lang/qwen06b_aiden_english_constrained_sampling_20260212T225114Z.wav",
+    "transcript": "I think it's not a good idea. It's a good idea. It's a good idea. It's a good idea. It's a good idea.",
+    "passed": false
+  },
+  {
+    "attempt": 3,
+    "config": {
+      "name": "english_deterministic",
+      "language": "English",
+      "do_sample": false,
+      "top_p": 0.7,
+      "temperature": 0.4,
+      "repetition_penalty": 1.1,
+      "max_new_tokens": 120
+    },
+    "file": "/home/beast/vocolibri-production/ai_models/qwen-tts/doc/tests/lang/qwen06b_aiden_english_deterministic_20260212T225114Z.wav",
+    "transcript": "",
+    "passed": false
+  },
+  {
+    "attempt": 4,
+    "config": {
+      "name": "english_deterministic_short",
+      "language": "English",
+      "do_sample": false,
+      "top_p": 0.7,
+      "temperature": 0.4,
+      "repetition_penalty": 1.1,
+      "max_new_tokens": 80
+    },
+    "file": "/home/beast/vocolibri-production/ai_models/qwen-tts/doc/tests/lang/qwen06b_aiden_english_deterministic_short_20260212T225114Z.wav",
+    "transcript": "and I was like, well, you might have been in college. I was like, you're going to have to be in college. You're going to have to be in college.",
+    "passed": false
+  }
+]

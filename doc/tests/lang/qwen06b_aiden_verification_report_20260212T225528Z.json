@@ -1,0 +1,17 @@
+[
+  {
+    "attempt": 1,
+    "config": {
+      "name": "baseline_auto",
+      "language": "Auto",
+      "do_sample": true,
+      "top_p": 0.7,
+      "temperature": 0.4,
+      "repetition_penalty": 1.1,
+      "max_new_tokens": 1024
+    },
+    "file": "/home/beast/vocolibri-production/ai_models/qwen-tts/doc/tests/lang/qwen06b_aiden_baseline_auto_20260212T225528Z.wav",
+    "transcript": "The quick brown fox jumps over the lazy dog.",
+    "passed": true
+  }
+]
