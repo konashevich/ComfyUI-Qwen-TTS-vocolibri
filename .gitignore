@@ -23,3 +23,14 @@ temp/
 # Local development
 .venv/
 ComfyUI/
+
+# Ignore generated media/audio files
+# (untracked or generated test outputs)
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.m4a
+*.aac
+**/audio/
+**/media/
