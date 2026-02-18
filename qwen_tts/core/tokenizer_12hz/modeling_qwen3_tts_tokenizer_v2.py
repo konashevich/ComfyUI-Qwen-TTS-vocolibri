@@ -57,7 +57,8 @@ def auto_docstring(obj=None, *, custom_intro=None, custom_args=None, checkpoint=
         return decorator
 
 from transformers.utils.deprecation import deprecate_kwarg
-from transformers.utils.generic import check_model_inputs
+# from transformers.utils.generic import check_model_inputs
+def check_model_inputs(func): return func
 
 from .configuration_qwen3_tts_tokenizer_v2 import (
     Qwen3TTSTokenizerV2Config,
