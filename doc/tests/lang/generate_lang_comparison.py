@@ -46,7 +46,7 @@ def main() -> None:
     qwen_module = importlib.import_module("qwen_tts")
     Qwen3TTSModel = qwen_module.Qwen3TTSModel
 
-    model_path = Path("/home/beast/ComfyUI-Qwen-TTS-vocolibri/ComfyUI/models/qwen-tts/Qwen3-TTS-12Hz-0.6B-CustomVoice")
+    model_path = repo_root / "ai_models" / "qwen-tts" / "ComfyUI" / "models" / "qwen-tts" / "Qwen3-TTS-12Hz-0.6B-CustomVoice"
     if not model_path.exists():
         fallback = repo_root / "ComfyUI" / "models" / "qwen-tts" / "Qwen3-TTS-12Hz-0.6B-CustomVoice"
         if fallback.exists():
