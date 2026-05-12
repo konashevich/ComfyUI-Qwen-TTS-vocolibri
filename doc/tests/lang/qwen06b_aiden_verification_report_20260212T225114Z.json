@@ -10,7 +10,7 @@
       "repetition_penalty": 1.1,
       "max_new_tokens": 1024
     },
-    "file": "/home/beast/vocolibri-production/ai_models/qwen-tts/doc/tests/lang/qwen06b_aiden_baseline_auto_20260212T225114Z.wav",
+    "file": "/home/alex/vocolibri-production/ai_models/qwen-tts/doc/tests/lang/qwen06b_aiden_baseline_auto_20260212T225114Z.wav",
     "transcript": "",
     "passed": false
   },
@@ -25,7 +25,7 @@
       "repetition_penalty": 1.15,
       "max_new_tokens": 120
     },
-    "file": "/home/beast/vocolibri-production/ai_models/qwen-tts/doc/tests/lang/qwen06b_aiden_english_constrained_sampling_20260212T225114Z.wav",
+    "file": "/home/alex/vocolibri-production/ai_models/qwen-tts/doc/tests/lang/qwen06b_aiden_english_constrained_sampling_20260212T225114Z.wav",
     "transcript": "I think it's not a good idea. It's a good idea. It's a good idea. It's a good idea. It's a good idea.",
     "passed": false
   },
@@ -40,7 +40,7 @@
       "repetition_penalty": 1.1,
       "max_new_tokens": 120
     },
-    "file": "/home/beast/vocolibri-production/ai_models/qwen-tts/doc/tests/lang/qwen06b_aiden_english_deterministic_20260212T225114Z.wav",
+    "file": "/home/alex/vocolibri-production/ai_models/qwen-tts/doc/tests/lang/qwen06b_aiden_english_deterministic_20260212T225114Z.wav",
     "transcript": "",
     "passed": false
   },
@@ -55,7 +55,7 @@
       "repetition_penalty": 1.1,
       "max_new_tokens": 80
     },
-    "file": "/home/beast/vocolibri-production/ai_models/qwen-tts/doc/tests/lang/qwen06b_aiden_english_deterministic_short_20260212T225114Z.wav",
+    "file": "/home/alex/vocolibri-production/ai_models/qwen-tts/doc/tests/lang/qwen06b_aiden_english_deterministic_short_20260212T225114Z.wav",
     "transcript": "and I was like, well, you might have been in college. I was like, you're going to have to be in college. You're going to have to be in college.",
     "passed": false
   }

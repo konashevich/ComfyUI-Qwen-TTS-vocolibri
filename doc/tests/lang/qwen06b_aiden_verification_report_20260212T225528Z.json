@@ -10,7 +10,7 @@
       "repetition_penalty": 1.1,
       "max_new_tokens": 1024
     },
-    "file": "/home/beast/vocolibri-production/ai_models/qwen-tts/doc/tests/lang/qwen06b_aiden_baseline_auto_20260212T225528Z.wav",
+    "file": "/home/alex/vocolibri-production/ai_models/qwen-tts/doc/tests/lang/qwen06b_aiden_baseline_auto_20260212T225528Z.wav",
     "transcript": "The quick brown fox jumps over the lazy dog.",
     "passed": true
   }
